@@ -1,3 +1,13 @@
+"""
+Скрипт по акциям SBER.
+
+Скрипт запускается сразу после открытия биржи
+- получает данные с api МосБиржи за прошедшие 5 дней
+- получает цену открытия сегодня
+- предсказывает цены по обученным ранее моделям
+- отправляет в телеграм-бот
+"""
+
 # Загрузка библиотек
 
 # данные
@@ -12,21 +22,24 @@ from joblib import load
 import telebot
 
 # токен для телеграм-бота
-token='...'
+token='..........'
 # chat_id
-chat_id = '...'
+chat_id = '1142959346'
 # название бумаги
 stock = 'SBER'
 # названия колонок-предикторов
-X_columns = ['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL', 'DIF_O_C', 'DIF_H_L', 'MEAN_2', 
+X_columns = ['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL', 'DIF_O_C', 'DIF_H_L', 'MEAN_2',
        'MEAN_3', 'MEAN_4', 'MEAN_5', 'HIGH_2', 'HIGH_3', 'HIGH_4', 'HIGH_5',
-       'LOW_2', 'LOW_3', 'LOW_4', 'LOW_5', 'OPEN-1', 'HIGH-1', 'LOW-1',
-       'CLOSE-1', 'VOL-1', 'OPEN-2', 'HIGH-2', 'LOW-2', 'CLOSE-2', 'VOL-2',
-       'OPEN-3', 'HIGH-3', 'LOW-3', 'CLOSE-3', 'VOL-3', 'OPEN_TODAY',
-       'DAY_OF_WEEK_0', 'DAY_OF_WEEK_1', 'DAY_OF_WEEK_2', 'DAY_OF_WEEK_3',
-       'DAY_OF_WEEK_4', 'DAY_OF_WEEK_5', 'DAY_OF_WEEK_6', 'MONTH_1', 'MONTH_2',
-       'MONTH_3', 'MONTH_4', 'MONTH_5', 'MONTH_6', 'MONTH_7', 'MONTH_8',
-       'MONTH_9', 'MONTH_10', 'MONTH_11', 'MONTH_12']
+       'LOW_2', 'LOW_3', 'LOW_4', 'LOW_5', 'OPEN_LAG_1', 'HIGH_LAG_1',
+       'LOW_LAG_1', 'CLOSE_LAG_1', 'VOL_LAG_1', 'OPEN_LAG_2', 'HIGH_LAG_2',
+       'LOW_LAG_2', 'CLOSE_LAG_2', 'VOL_LAG_2', 'OPEN_LAG_3', 'HIGH_LAG_3',
+       'LOW_LAG_3', 'CLOSE_LAG_3', 'VOL_LAG_3', 'OPEN_LAG_4', 'HIGH_LAG_4',
+       'LOW_LAG_4', 'CLOSE_LAG_4', 'VOL_LAG_4', 'OPEN_LAG_5', 'HIGH_LAG_5',
+       'LOW_LAG_5', 'CLOSE_LAG_5', 'VOL_LAG_5', 'OPEN_TODAY', 'DAY_OF_WEEK_0',
+       'DAY_OF_WEEK_1', 'DAY_OF_WEEK_2', 'DAY_OF_WEEK_3', 'DAY_OF_WEEK_4',
+       'DAY_OF_WEEK_5', 'DAY_OF_WEEK_6', 'MONTH_1', 'MONTH_2', 'MONTH_3',
+       'MONTH_4', 'MONTH_5', 'MONTH_6', 'MONTH_7', 'MONTH_8', 'MONTH_9',
+       'MONTH_10', 'MONTH_11', 'MONTH_12']
 
 # Feature engineering function
 
@@ -63,14 +76,20 @@ def features(data):
     data['LOW_5'] = data['LOW'].rolling(window=5, center=False).min()
     
     # цены и объем за прошлые дни
-    data[['OPEN-1', 'HIGH-1', 'LOW-1', 'CLOSE-1', 'VOL-1']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(1)
-    data[['OPEN-2', 'HIGH-2', 'LOW-2', 'CLOSE-2', 'VOL-2']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(2)
-    data[['OPEN-3', 'HIGH-3', 'LOW-3', 'CLOSE-3', 'VOL-3']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(3)
-    
+    data[['OPEN_LAG_1', 'HIGH_LAG_1', 'LOW_LAG_1', 'CLOSE_LAG_1', 'VOL_LAG_1']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(1)
+    data[['OPEN_LAG_2', 'HIGH_LAG_2', 'LOW_LAG_2', 'CLOSE_LAG_2', 'VOL_LAG_2']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(2)
+    data[['OPEN_LAG_3', 'HIGH_LAG_3', 'LOW_LAG_3', 'CLOSE_LAG_3', 'VOL_LAG_3']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(3)
+    data[['OPEN_LAG_4', 'HIGH_LAG_4', 'LOW_LAG_4', 'CLOSE_LAG_4', 'VOL_LAG_4']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(4)
+    data[['OPEN_LAG_5', 'HIGH_LAG_5', 'LOW_LAG_5', 'CLOSE_LAG_5', 'VOL_LAG_5']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(5)
+
+  
     # цена открытия сегодня
     data['OPEN_TODAY'] = data['OPEN'].shift(-1)
 
+    data.dropna(inplace=True)
+
     return pd.get_dummies(data, columns=['DAY_OF_WEEK', 'MONTH'], prefix=['DAY_OF_WEEK', 'MONTH'])
+
 
 # Функция для предсказания цены закрытия
 """
@@ -139,7 +158,7 @@ def job():
     model_close = load('./saved_models/sber_model_close.joblib')
     model_high = load('./saved_models/sber_model_high.joblib')
     model_low = load('./saved_models/sber_model_low.joblib')
-
+    
     # предсказания по ценам
     close_pred = round(*model_close.predict(z), 2)
     high_pred = round(*model_high.predict(z), 2)
@@ -168,7 +187,7 @@ def script():
     
     # сегодняшняя дата
     today_date = f'{datetime.datetime.now():%Y-%m-%d}'
-    
+    print(today_date)
     # рабочие дни на бирже пн - пт
     # также могут быть переносы рабочих дней, праздничные дни и пр.
     # поэтому перед запуском модели проверяем рабочий ли сегодня день на бирже
@@ -188,10 +207,10 @@ def script():
         #print('Сегодня на бирже рабочий день')  
         job()
 
-# Телеграм-бот
+"""# Телеграм-бот"""
 
 bot = telebot.TeleBot(token)
 
-# Запуск скрипта
+"""# Запуск скрипта"""
 
 script()
