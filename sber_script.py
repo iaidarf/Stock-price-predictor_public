@@ -22,9 +22,9 @@ from joblib import load
 import telebot
 
 # токен для телеграм-бота
-token='..........'
+token='...'
 # chat_id
-chat_id = '1142959346'
+chat_id = '...'
 # название бумаги
 stock = 'SBER'
 # названия колонок-предикторов
@@ -44,10 +44,10 @@ X_columns = ['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL', 'DIF_O_C', 'DIF_H_L', 'MEAN_
 # Feature engineering function
 
 def features(data):
-
+    
     # день недели
     data['DAY_OF_WEEK'] = data['DATE'].dt.dayofweek
-
+    
     # месяц
     data['MONTH'] = data['DATE'].dt.month
     
@@ -62,7 +62,7 @@ def features(data):
     data['MEAN_3'] = data['CLOSE'].rolling(window=3, center=False).mean()
     data['MEAN_4'] = data['CLOSE'].rolling(window=4, center=False).mean()
     data['MEAN_5'] = data['CLOSE'].rolling(window=5, center=False).mean()
-
+    
     # максимальные цены за ... дней
     data['HIGH_2'] = data['HIGH'].rolling(window=2, center=False).max()
     data['HIGH_3'] = data['HIGH'].rolling(window=3, center=False).max()
@@ -81,11 +81,11 @@ def features(data):
     data[['OPEN_LAG_3', 'HIGH_LAG_3', 'LOW_LAG_3', 'CLOSE_LAG_3', 'VOL_LAG_3']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(3)
     data[['OPEN_LAG_4', 'HIGH_LAG_4', 'LOW_LAG_4', 'CLOSE_LAG_4', 'VOL_LAG_4']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(4)
     data[['OPEN_LAG_5', 'HIGH_LAG_5', 'LOW_LAG_5', 'CLOSE_LAG_5', 'VOL_LAG_5']] = data[['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOL']].shift(5)
-
+    
   
     # цена открытия сегодня
     data['OPEN_TODAY'] = data['OPEN'].shift(-1)
-
+    
     data.dropna(inplace=True)
 
     return pd.get_dummies(data, columns=['DAY_OF_WEEK', 'MONTH'], prefix=['DAY_OF_WEEK', 'MONTH'])
@@ -109,10 +109,10 @@ def job():
             break
     #print('total =', total)    
 
-    # получение данных за прошедшие 5 дней
+    # получение данных за прошедшие дни
     while True:
         try:
-            h = pd.read_xml("https://iss.moex.com/iss/history/engines/stock/markets/shares/securities/" + stock + "?start=" + str(total-10), xpath="//row")   
+            h = pd.read_xml("https://iss.moex.com/iss/history/engines/stock/markets/shares/securities/" + stock + "?start=" + str(total-20), xpath="//row")   
         except:
             pass
         else:
@@ -122,14 +122,12 @@ def job():
     h = h[h.BOARDID == 'TQBR'][['SECID', 'TRADEDATE', 'OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOLUME']]
     h.rename(columns={'TRADEDATE':'DATE', 'VOLUME':'VOL'}, inplace=True)
     h.DATE = pd.to_datetime(h.DATE)
-    #print('h=', h) 
 
     # Feature engineering
-    h = features(h)
+    h1 = features(h.copy())
  
     # для предсказания сохраним одну строку, а также удалим ненужные колонки
-    z = h.drop(columns=['SECID', 'DATE']).tail(1)
-    #print('z=', z)  
+    z = h1.drop(columns=['SECID', 'DATE']).tail(1)
 
     # Часть признаков (дни недели) могут не присутствовать в новых данных
     # Сравним признаки и сохраним набор недостающих
@@ -137,6 +135,7 @@ def job():
     # Добавим их в новые данные и заполним нулями
     for c in missing_cols:
         z[c] = 0
+
     # Приведем порядок признаков в соотвествие
     z = z[X_columns] 
 
@@ -155,24 +154,26 @@ def job():
     #print('open_today =', open_today)
 
     # загрузка моделей
+    fs_close = load('./saved_models/sber_fs_close.joblib')
+    fs_high = load('./saved_models/sber_fs_high.joblib')
+    fs_low = load('./saved_models/sber_fs_low.joblib')
+    
     model_close = load('./saved_models/sber_model_close.joblib')
     model_high = load('./saved_models/sber_model_high.joblib')
     model_low = load('./saved_models/sber_model_low.joblib')
-    
-    # предсказания по ценам
-    close_pred = round(*model_close.predict(z), 2)
-    high_pred = round(*model_high.predict(z), 2)
-    low_pred = round(*model_low.predict(z), 2)
-    #print(f'CLOSE = {close_pred}')
-    #print(f'HIGH = {high_pred}')
-    #print(f'LOW = {low_pred}')
-    # покупать или продавать
-    if close_pred > open_today:
-        long_short = 'LONG'
-    elif close_pred < open_today:
-        long_short = 'SHORT'
-    #print(long_short)
 
+    z_close = fs_close.transform(z)
+    z_high = fs_high.transform(z)
+    z_low = fs_low.transform(z)
+
+    # предсказания по ценам
+    close_pred = round(*model_close.predict(z_close), 2)
+    #print(f'CLOSE = {close_pred}')
+    high_pred = round(*model_high.predict(z_high), 2)
+    #print(f'HIGH = {high_pred}')
+    low_pred = round(*model_low.predict(z_low), 2)
+    #print(f'LOW = {low_pred}')
+    
     # отправка сообщения
     bot.send_message(chat_id, 
                       f'Сегодня: {datetime.date.today()} \n'
@@ -180,8 +181,8 @@ def job():
                       f'PREDICT: \n'
                       f'CLOSE = {close_pred} \n'
                       f'HIGH = {high_pred} \n'
-                      f'LOW = {low_pred} \n'
-                      f'long_short = {long_short}')
+                      f'LOW = {low_pred}')
+
 
 def script():
     
